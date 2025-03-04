@@ -9,14 +9,16 @@ import {
 import { PostgreSQLAdapter as Database } from "@builderbot/database-postgres";
 import { MetaProvider as Provider } from "@builderbot/provider-meta";
 import dotenv from "dotenv";
-import { OpenAI } from "openai";
+import OpenAI from "openai";
 
 import axios from "axios";
 
 dotenv.config();
 
 const PORT = process.env.PORT ?? 3008;
-
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 // Configuración de la base de datos
 const adapterDB = new Database({
   host: process.env.DB_HOST,
@@ -5210,10 +5212,6 @@ const compra123 = addKeyword(["Comprar 200id:41"],{ matchExactly: true }).addAns
   }
 );
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
 const askOpenAI = async (question) => {
   try {
     const response = await openai.chat.completions.create({
@@ -5230,47 +5228,29 @@ const askOpenAI = async (question) => {
   }
 };
 
-// Flujo para manejar preguntas cuando el bot no tiene respuesta
+// Flujo por defecto para manejar preguntas no reconocidas
 const defaultResponseFlow = addKeyword("default")
-  .addAnswer(
-    "Lo siento, no entiendo tu pregunta. ¿Quieres preguntarle a OpenAI?",
-    { capture: true }
-  )
+  .addAnswer("Lo siento, no entiendo tu pregunta. ¿Quieres preguntarle a OpenAI?", { capture: true })
   .addAction(async (ctx, { flowDynamic }) => {
     const question = ctx.body.trim();
     const openAIResponse = await askOpenAI(question);
     await flowDynamic(openAIResponse);
   });
 
-// Flujo de conversación principal con una respuesta por defecto
+// Flujo principal que también usa la IA para respuestas no mapeadas
 const mainFlow = addKeyword("start")
   .addAnswer("¡Hola! ¿En qué puedo ayudarte hoy?", { capture: true })
   .addAction(async (ctx, { flowDynamic }) => {
     const message = ctx.body.trim();
 
-    // Si no hay un flujo que coincida, se dirige a OpenAI
+    // Si el mensaje no pertenece a otro flujo (usamos un flag en ctx.state)
     if (!ctx.state || !ctx.state.flow) {
-      ctx.state = ctx.state || {}; // Inicializar ctx.state si no existe
-      ctx.state.flow = true; // Establecer un valor predeterminado para flow
+      ctx.state = ctx.state || {};
+      ctx.state.flow = true; // Marca que se procesó este mensaje
       const openAIResponse = await askOpenAI(message);
       await flowDynamic(openAIResponse);
     }
   });
-const generateOpenAIResponse = async (prompt) => {
-  try {
-    const response = await openai.completions.create({
-      model: "text-davinci-003", // o el modelo que prefieras
-      prompt: prompt,
-      max_tokens: 100,
-      temperature: 0.7,
-    });
-
-    return response.choices[0].text.trim();
-  } catch (error) {
-    console.error("Error al generar la respuesta de OpenAI:", error);
-    return "Lo siento, hubo un problema al generar una respuesta.";
-  }
-};
 const main = async () => {
   // Agregar el flujo dataFlow junto con los demás
   const adapterFlow = createFlow([
@@ -5281,6 +5261,7 @@ const main = async () => {
     dataFaldas,
     editRegisterFlow,
     dataCarrito,
+    dataPedidoConfirmado,
     compra1,
     compra2,
     compra3,
@@ -5404,7 +5385,7 @@ const main = async () => {
     compra121,
     compra122,
     compra123,
-    defaultResponseFlow, // Agregar flujo de respuesta por defecto
+    defaultResponseFlow,
     mainFlow,
     dataCamisas,
     dataChaqueta,
